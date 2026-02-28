@@ -5,6 +5,7 @@ This is a repository of my RE Engine Lua script mods, for use with [praydog](htt
 * Devil May Cry 5
 * Resident Evil 7
 * Resident Evil 8
+* Resident Evil 9
 * Resident Evil 2 Remake
 * Resident Evil 3 Remake
 * Resident Evil 4 Remake
