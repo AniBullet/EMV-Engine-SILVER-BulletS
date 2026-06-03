@@ -1,6 +1,6 @@
 --EMV_Engine by alphaZomega | Kept on life support by SilverEzredes
 --Console, imgui and support classes and functions for REFramework
-local  version = "2.0.72-SILVER |  February 28, 2026"
+local  version = "2.0.73-SILVER |  June 3, 2026"
 
 --Global variables --------------------------------------------------------------------------------------------------------------------------
 _G["is" .. reframework.get_game_name():sub(1, 3):upper()] = true --sets up the "isRE2", "isRE3" etc boolean
@@ -167,8 +167,17 @@ local static_funcs = {
 	mk_gameobj_w_fld = sdk.find_type_definition("via.GameObject"):get_method("create(System.String, via.Folder)"),
 }
 -- SILVER: Fix for MHWilds, MHST3 and Pragmata as `via.murmur_hash` lacks the calc32 method (or any methods for the record)
-if (reframework.get_game_name() ~= "pragmata") and (reframework.get_game_name() ~= "mhwilds") and (reframework.get_game_name() ~= "mhstories3") and (reframework.get_game_name() ~= "re9") then
-	static_funcs.string_hashing_method = sdk.find_type_definition("via.murmur_hash"):get_method("calc32")
+-- I won't even being to claim that I know how hashing works, based it on this repo https://github.com/tkaemming/lua-murmurhash3 and used some tests from here to verify: https://en.wikipedia.org/wiki/MurmurHash
+local games_missing_murmur_hash = {
+    pragmata = true,
+    mhwilds = true,
+    mhstories3 = true,
+    re9 = true,
+    onimusha_wots = true
+}
+
+if not games_missing_murmur_hash[reframework.get_game_name()] then
+    static_funcs.string_hashing_method = sdk.find_type_definition("via.murmur_hash"):get_method("calc32")
 end
 
 --Convert a float to a byte, meant for colors:
@@ -1895,6 +1904,7 @@ end
 local function update_keyboard_state()
     local kb = get_kb_device()
     if not kb then return end
+	
     for button, state in pairs(kb_state.down) do
         kb_state.down[button] = kb:call("isDown", button)
     end
@@ -2295,16 +2305,13 @@ end
 
 --Turn a string into a murmur3 hash -------------------------------------------------------------------------------------------------------------
 hashing_method = function(str) 
-	-- SILVER: I won't even being to claim that I know how hashing works, based it on this repo https://github.com/tkaemming/lua-murmurhash3 and used some tests from here to verify: https://en.wikipedia.org/wiki/MurmurHash
-	if (reframework.get_game_name() == "pragmata") or (reframework.get_game_name() == "mhwilds") or (reframework.get_game_name() == "mhstories3") or (reframework.get_game_name() == "re9") then
-    	if type(str) == "string" and tonumber(str) == nil then
-        	return murmur3.calc32(str)
-		end
-	else
-		if type(str) == "string" and tonumber(str) == nil then
-			return static_funcs.string_hashing_method:call(nil, str)
-		end
-	end
+if type(str) == "string" and tonumber(str) == nil then
+    if games_missing_murmur_hash[reframework.get_game_name()] then
+        return murmur3.calc32(str)
+    else
+        return static_funcs.string_hashing_method:call(nil, str)
+    end
+end
 	return tonumber(str)
 end
 
@@ -7156,7 +7163,7 @@ local Material = {
 			and saved_mats[o.anim_object.name_w_parent].m[o.anim_object.mesh_name][o.name] or {texs={},vars={},toggled=self.on}
 		
 		if o.name then 
-			if isRE2 or isRE3 or isDMC then -- SILVER: This doesn't work for RE9
+			if isRE2 or isRE3 or isDMC then
 				o.on = (o.mesh:read_byte(0xE8 + 4 * (o.id >> 5)) & (1 << o.id)) ~= 0
 			else
 				o.on = o.mesh:call("getMaterialsEnable", o.id)
@@ -9483,7 +9490,7 @@ GameObject = {
 		imgui.tooltip("Filter bones by name\nSeparate multiple terms with spaces")
 		
 		if changed or not poser.searched_joints or changed_alphanumeric then 
-			
+
 			search_terms = split(poser.search_text:lower(), " ")
 			search_terms[1] = search_terms[1] or ""
 			
@@ -9684,7 +9691,7 @@ GameObject = {
 						fj[joint] = fj[joint] or {false, false, false}
 						fj[joint][poser.prop_idx] = joint["get"..poser.prop_name](joint)
 					end
-					draw.text("\n" .. joint:get_Name(), text_pos[1], text_pos[2], 0xFFFFFFFF)
+					draw.text("\n" .. joint:get_Name(), text_pos[1], text_pos[2], 0x99FFFFFF)
 					draw.line(gizmo_tbl[2].x, gizmo_tbl[2].y, text_pos[1], text_pos[2] + 30, 0xFFFFFFFF )
 					if not ctrl_pressed and self.last_show_joints ~= nil then
 						self.show_joints, self.last_show_joints = self.last_show_joints, nil
