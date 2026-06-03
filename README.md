@@ -18,6 +18,7 @@ This is a repository of my RE Engine Lua script mods, for use with [praydog](htt
 * Dragon's Dogma 2
 * Dead Rising Deluxe Remaster
 * Pragmata
+* Onimusha: Way of the Sword
 
 ### Requirements
 * [REFramework](https://github.com/praydog/REFramework-nightly/releases)
