@@ -6,6 +6,10 @@ local  version = "2.0.73-SILVER |  June 3, 2026"
 _G["is" .. reframework.get_game_name():sub(1, 3):upper()] = true --sets up the "isRE2", "isRE3" etc boolean
 BitStream = require("EMV Engine/Bitstream")
 murmur3 = require("EMV Engine/murmur3")
+local try_mhwilds_compat, mhwilds_compat = pcall(require, "EMV Engine/mhwilds_compat")
+mhwilds_compat = try_mhwilds_compat and mhwilds_compat or nil
+isMHWILDS = reframework.get_game_name() == "mhwilds"
+isMHWilds = isMHWILDS
 
 _data = {}				--Tables used for indexing REManagedObjects, RETransforms, SystemArrays and ValueTypes
 metadata_methods = {}		--Cached table of functions, fields, etc ("propdata") for each type definition, indexed by full typedef name
@@ -53,6 +57,7 @@ SettingsCache = {
 	show_enable_checkboxes = true,
 	load_resources = true,
 	max_open_time = 30,
+	mhwilds_use_joint_position_for_skeleton = isMHWILDS or false,
 	Collection_data = {
 		collection_xforms = {},
 		worldmatrix = Matrix4x4f.identity(),
@@ -131,7 +136,7 @@ local tds = {
 	via_hid_mouse_typedef = sdk.find_type_definition("via.hid.Mouse"),
 	via_hid_keyboard_typedef = sdk.find_type_definition("via.hid.Keyboard"),
 	guid = sdk.find_type_definition(sdk.game_namespace("GuidExtention")),
-	mathex = sdk.find_type_definition(({mhrise="via.MathEx", sf6="via.MathEx", re2="app.MathEx", re9="via.MathEx",})[game_name] or sdk.game_namespace("MathEx")),
+	mathex = sdk.find_type_definition(({mhrise="via.MathEx", mhwilds="via.MathEx", sf6="via.MathEx", re2="app.MathEx", re9="via.MathEx",})[game_name] or sdk.game_namespace("MathEx")),
 }
 
 local static_objs = {
@@ -149,6 +154,7 @@ local static_objs = {
 		(isSF6 and "EmulatorContent") or 
 		(isDMC and "Develop") or 
 		(isMHR and "Item_b_000") or 
+		(isMHWILDS and "Develop") or
 		(isRE8 and "Debug") or ""
 	),
 }
@@ -237,6 +243,7 @@ local cog_names = {
 	["re8"] = "Hip", 
 	["dmc5"] = "Hip", 
 	["mhrise"] = "Cog", 
+	["mhwilds"] = "Cog",
 	["sf6"] = "C_Hip", 
 	["re4"] = "Hip", 
 }
@@ -3285,7 +3292,7 @@ end]]
 
 --Get the local player -----------------------------------------------------------------------------------------------------------------
 local function get_player(as_GameObject)
-	static_objs.playermanager = sdk.get_managed_singleton(sdk.game_namespace((isMHR and "player." or "") .. "PlayerManager"))
+	static_objs.playermanager = sdk.get_managed_singleton(sdk.game_namespace((isMHR and "player." or "") .. "PlayerManager")) or sdk.get_managed_singleton("app.PlayerManager")
 	if static_objs.playermanager or isRE8 or isRE7 then 
 		local player, xform
 		if isDMC then 
@@ -3293,6 +3300,21 @@ local function get_player(as_GameObject)
 			player = get_GameObject(player)
 		elseif isMHR then 
 			player = static_objs.playermanager:call("findMasterPlayer")
+		elseif isMHWILDS then
+			local player_methods = {"findMasterPlayer", "getMasterPlayer", "get_MasterPlayer", "get_CurrentPlayer", "getCurrentPlayer", "get_Player"}
+			for i, method_name in ipairs(player_methods) do
+				local ok, result = pcall(static_objs.playermanager.call, static_objs.playermanager, method_name)
+				if ok and result then
+					player = result
+					break
+				end
+			end
+			local ok, gameobj = player and pcall(player.call, player, "get_GameObject")
+			if ok and gameobj then
+				player = gameobj
+			end
+			xform = (not player) and ((find("app.PlayerBase") or {})[1] or (find("app.HunterCharacter") or {})[1] or (find("app.PlayerCharacter") or {})[1])
+			player = player or (xform and get_GameObject(xform))
 		elseif isRE8 then
 			xform = find("app.PlayerUpdaterBase")[1]
 			player = xform and get_GameObject(xform)
@@ -5477,12 +5499,24 @@ if REMgdObj_objects then
 	--REMgdObj_objects = nil
 end]]
 
-if isRE9 then
-	mathex = tds.mathex.to_managed_object and (sdk.create_instance(tds.mathex:get_full_name(), true) or sdk.create_instance(tds.mathex:get_full_name(), true))	
-else
-	mathex = tds.mathex and (sdk.create_instance(tds.mathex:get_full_name(), true) or sdk.create_instance(tds.mathex:get_full_name(), true))
+local function try_create_managed_instance(type_name, force_managed)
+	local ok, obj = pcall(sdk.create_instance, type_name, force_managed)
+	if ok and obj and sdk.is_managed_object(obj) then
+		return obj
+	end
 end
-mathex = mathex and mathex:add_ref()
+
+if tds.mathex and not isMHWILDS then
+	local mathex_type_name = tds.mathex:get_full_name()
+	if isRE9 and tds.mathex.to_managed_object then
+		mathex = try_create_managed_instance(mathex_type_name, true) or try_create_managed_instance(mathex_type_name, false)
+	else
+		mathex = try_create_managed_instance(mathex_type_name, true) or try_create_managed_instance(mathex_type_name, false)
+	end
+elseif isMHWILDS then
+	mathex = nil
+end
+mathex = mathex and mathex.add_ref and mathex:add_ref()
 if mathex then 
 	create_REMgdObj(mathex, true) 
 end
@@ -6902,7 +6936,7 @@ function imgui.managed_object_control_panel(m_obj, key_name, field_name)
 					show_imgui_mats(o_tbl.go) 
 					imgui.tree_pop()
 				end
-			elseif o_tbl.name == "Motion" then
+			elseif o_tbl.name == "Motion" and not isMHWILDS then
 				o_tbl.go = o_tbl.go or held_transforms[m_obj] or GameObject:new{xform=m_obj}
 				if o_tbl.go and o_tbl.go.xform then 
 					o_tbl.go:imgui_motion()
@@ -9751,33 +9785,49 @@ GameObject = {
 			imgui.begin_rect()
 			
 			if not aw.mixed_banks then
-				aw.mixed_banks = {}
-				aw.all_mots = {}
-				aw.motion = motion or self.components_named.Motion
-				aw.layers = lua_get_system_array(aw.motion:get_Layer())
-				aw.enabled_layers = {true}
-				aw.reset_pos = self.xform:call("get_Position")
-				edit_objs(aw.layers, {_WrapMode=aw.do_loop and 2 or 0})
-				local minfo = sdk.create_instance("via.motion.MotionInfo"):add_ref()
-				for i, name in ipairs({"ActiveMotionBank", "DynamicMotionBank"}) do
-					for j, motionbank in ipairs(lua_get_system_array(aw.motion:call("get_"..name), true)) do 
-						if motionbank.get_BankID then
-							local bank_id = motionbank:get_BankID()
-							local name = motionbank:get_MotionList(); name = name and name:ToString():match("^.+%[.+/(.+)%.motlist%]")
-							if name then
-								aw.mixed_banks[bank_id] = aw.mixed_banks[bank_id] or {name=name}
-								for k=0, aw.motion:getMotionCount(bank_id) - 1 do
-									aw.motion:call("getMotionInfoByIndex(System.UInt32, System.UInt32, via.motion.MotionInfo)", bank_id, k, minfo)
-									table.insert(aw.all_mots, {bank=bank_id, id=minfo:get_MotionID(), name=minfo:get_MotionName()})
-									aw.mixed_banks[bank_id][minfo:get_MotionID()] = aw.all_mots[#aw.all_mots].name:gsub("esf%d%d%d_", "")
+				local init_success, init_err = pcall(function()
+					aw.mixed_banks = {}
+					aw.all_mots = {}
+					aw.motion = motion or self.components_named.Motion
+					aw.layers = lua_get_system_array(aw.motion:get_Layer())
+					aw.enabled_layers = {true}
+					aw.reset_pos = self.xform:call("get_Position")
+					edit_objs(aw.layers, {_WrapMode=aw.do_loop and 2 or 0})
+					local minfo = sdk.create_instance("via.motion.MotionInfo"):add_ref()
+					for i, name in ipairs({"ActiveMotionBank", "DynamicMotionBank"}) do
+						for j, motionbank in ipairs(lua_get_system_array(aw.motion:call("get_"..name), true)) do
+							if motionbank.get_BankID then
+								local bank_id = motionbank:get_BankID()
+								local name = motionbank:get_MotionList(); name = name and name:ToString():match("^.+%[.+/(.+)%.motlist%]")
+								if name then
+									aw.mixed_banks[bank_id] = aw.mixed_banks[bank_id] or {name=name}
+									local count_ok, motion_count = pcall(aw.motion.getMotionCount, aw.motion, bank_id)
+									motion_count = count_ok and motion_count or 0
+									for k=0, motion_count - 1 do
+										local info_ok = pcall(aw.motion.call, aw.motion, "getMotionInfoByIndex(System.UInt32, System.UInt32, via.motion.MotionInfo)", bank_id, k, minfo)
+										if info_ok then
+											local mot_id = minfo:get_MotionID()
+											local mot_name = minfo:get_MotionName()
+											table.insert(aw.all_mots, {bank=bank_id, id=mot_id, name=mot_name})
+											aw.mixed_banks[bank_id][mot_id] = aw.all_mots[#aw.all_mots].name:gsub("esf%d%d%d_", "")
+										end
+									end
 								end
 							end
 						end
 					end
-				end
-				aw.motion:set_PlaySpeed(1.0)
-				for m, layer in ipairs(aw.layers) do
-					aw.layer_main = aw.layer_main or layer:getMotionNode(0) and layer
+					aw.motion:set_PlaySpeed(1.0)
+					for m, layer in ipairs(aw.layers) do
+						aw.layer_main = aw.layer_main or layer:getMotionNode(0) and layer
+					end
+				end)
+				if not init_success then
+					aw.mixed_banks, aw.all_mots, aw.layers, aw.sorted_banks, aw.layer_main = nil
+					imgui.text_colored("Animation init failed for this object", 0xFFFF4444)
+					imgui.text(tostring(init_err))
+					imgui.end_rect(2)
+					imgui.tree_pop()
+					return
 				end
 				--[[if self.components_named.CharacterController then 
 					tmp_funcs[self.components_named.CharacterController] = function() 
@@ -10080,12 +10130,24 @@ GameObject = {
 				if self.joints and self.joint_positions then
 					local output_str = "\n"
 					local active_poser = self.poser and (uptime - self.poser.is_open) < 5
+					if isMHWILDS then
+						imgui.same_line()
+						imgui_changed, SettingsCache.mhwilds_use_joint_position_for_skeleton = imgui.checkbox("Wilds Joint Position", SettingsCache.mhwilds_use_joint_position_for_skeleton)
+					end
 					for i, joint in ipairs((active_poser and self.poser.all_joints) or self.joints) do 
 						output_str = output_str .. joint:call("get_Name") .. " = " .. joint:call("get_NameHash") .. ",\n"
 						local joint_pos = self.joint_positions[joint][3]
+						if isMHWILDS and SettingsCache.mhwilds_use_joint_position_for_skeleton then
+							local ok_pos, pos = pcall(joint.call, joint, "get_Position")
+							joint_pos = (ok_pos and pos) or joint_pos
+						end
 						local parent = joint:call("get_Parent")
 						if not parent or self.joint_positions[parent] ~= nil then 
 							local parent_pos = parent and self.joint_positions[parent][3]
+							if parent and isMHWILDS and SettingsCache.mhwilds_use_joint_position_for_skeleton then
+								local ok_parent_pos, pos = pcall(parent.call, parent, "get_Position")
+								parent_pos = (ok_parent_pos and pos) or parent_pos
+							end
 							local this_vec2 = draw.world_to_screen(joint_pos)
 							if self.show_joint_names or (parent and (parent_pos-joint_pos):length() > 1) then 
 								draw.world_text(joint:call("get_Name"), joint_pos, 0xFFFFFFFF) 
@@ -11226,6 +11288,7 @@ EMV = {
 	static_objs = static_objs,
 	static_funcs = static_funcs,
 	statics = statics,
+	mhwilds_compat = mhwilds_compat,
 	cog_names = cog_names,
 	bool_to_number = bool_to_number,
 	number_to_bool = number_to_bool,

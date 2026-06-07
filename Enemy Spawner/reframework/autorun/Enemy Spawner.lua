@@ -3,6 +3,11 @@
 --if true then return end
 local EMV = require("EMV Engine")
 
+if reframework.get_game_name() == "mhwilds" then
+	log.warn("[Enemy Spawner] Monster Hunter Wilds does not expose the RE2/RE3/DMC enemy catalog APIs used by this plugin. Use EMV prefab spawning with explicit Wilds .pfb paths instead.")
+	return
+end
+
 SettingsCache.loiter_by_default = true
 spawned_prefabs = {}
 local scene = sdk.call_native_func(sdk.get_native_singleton("via.SceneManager"), sdk.find_type_definition("via.SceneManager"), "get_CurrentScene") 
