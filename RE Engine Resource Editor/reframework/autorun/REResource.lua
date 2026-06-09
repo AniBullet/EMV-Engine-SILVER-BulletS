@@ -2349,6 +2349,7 @@ SCNFile = {
 		dmc5 =".19",
 		mhrise = ".20",
 		sf6 = ".20",
+		mhwilds = ".21",
 	},
 	
 	isSCN = true,
@@ -2701,6 +2702,7 @@ PFBFile = {
 		dmc5 =".16",
 		mhrise = ".17",
 		sf6 = ".17",
+		mhwilds = ".18",
 	},
 	
 	isPFB = true,
@@ -2925,6 +2927,7 @@ UserFile = {
 		dmc5 = ".2",
 		mhrise = ".2",
 		sf6 = ".2",
+		mhwilds = ".3",
 	},
 	
 	sf6_cmd_param_names = {
@@ -3274,6 +3277,7 @@ MDFFile = {
 		dmc5 =".10",
 		mhrise = ".23",
 		sf6 = ".31",
+		mhwilds = ".45",
 	},
 	
 	isMDF = true,
@@ -4611,6 +4615,7 @@ MotlistFile = {
 		dmc5 =".21",
 		mhrise = ".48",
 		sf6 = ".52",
+		mhwilds = ".992",
 	},
 	
 	isMotlist = true,

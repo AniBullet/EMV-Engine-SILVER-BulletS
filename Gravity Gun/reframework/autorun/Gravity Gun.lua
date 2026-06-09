@@ -5,6 +5,7 @@
 log.info("initializing Gravity Gun")
 log.debug("initializing Gravity Gun")
 local EMV = require("EMV Engine")
+local mhwilds_compat = EMV.mhwilds_compat
 
 ----------------------------------------------------------------------------------------------------------[[GLOBALS]]
 local game_name = reframework.get_game_name()
@@ -82,11 +83,11 @@ GGSettings = {}
 GGSettings.load_json = false
 GGSettings.block_input = false
 GGSettings.action_monitor = false
-GGSettings.force_functions = (isMHR and true) or false
+GGSettings.force_functions = ((isMHR or isMHWILDS) and true) or false
 GGSettings.show_transform = true
 GGSettings.prefer_rigid_bodies = (isRE2 or isRE3) and true
 GGSettings.wanted_layer = -1
-GGSettings.wanted_mask_bits = (isMHR and 10) or 2 --1?
+GGSettings.wanted_mask_bits = ((isMHR or isMHWILDS) and 10) or 2 --1?
 GGSettings.forced_funcs_data = {}
 
 local wants_rigid_bodies = false
@@ -139,6 +140,7 @@ GGSettings.ray_layers_tables = {
 	["sf6"] =		{1, 2, 3, 4, 5, 6, 8, 9, 10, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24 , 25, 26, 27, 28, 29, 30, 31, 32},
 	["re4"] =		{0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 24 , 25, 26, 27, 28, 29, 30, 31, 32},
 	["dd2"] =		{0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 24 , 25, 26, 27, 28, 29, 30, 31, 32},
+	["mhwilds"] =	(mhwilds_compat and mhwilds_compat.ray_layers) or {0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 , 25, 26, 27, 28, 29, 30, 31, 32},
 }
 
 ----------------------------------------------------------------------------------------------------------[[REMgdObj Functions]]
@@ -276,7 +278,8 @@ end
 local get_player = function()
 	local player = EMV.get_player()
 	if player then 
-		local gameobj = isMHR and player:call("get_GameObject")
+		local ok, gameobj = (isMHR or isMHWILDS) and pcall(player.call, player, "get_GameObject")
+		gameobj = ok and gameobj or nil
 		local xform = (gameobj and gameobj:call("get_Transform")) or player:call("get_Transform")
 		if xform then 
 			touched_gameobjects[xform] = touched_gameobjects[xform] or GameObject:new_GrabObject { gameobj=gameobj, xform=xform  }

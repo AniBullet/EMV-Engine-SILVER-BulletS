@@ -6,7 +6,13 @@ log.info("Initializing Enhanced Model Viewer")
 log.debug("Initializing Enhanced Model Viewer")
 local game_name = isSF6 and "sf6" or reframework.get_game_name()
 local EMV = require("EMV Engine")
-res = require("Enhanced Model Viewer\\enhanced_model_viewer_" .. game_name .. "_resources")
+local res_ok, res_or_err = pcall(require, "Enhanced Model Viewer\\enhanced_model_viewer_" .. game_name .. "_resources")
+if res_ok then
+	res = res_or_err
+else
+	log.warn("[EMV] No resource module loaded for " .. tostring(game_name) .. ": " .. tostring(res_or_err))
+	res = {}
+end
 
 --Global Persistent Settings
 EMVSettings = EMVSettings or {}
@@ -122,6 +128,7 @@ local ImguiTable = EMV.ImguiTable
 local bool_to_number = EMV.bool_to_number
 local number_to_bool = EMV.number_to_bool
 local cog_names = EMV.cog_names
+local mhwilds_compat = EMV.mhwilds_compat
 
 --EMV functions
 local random = EMV.random
@@ -202,6 +209,16 @@ local get_anim_object = EMV.get_anim_object
 local clear_object = EMV.clear_object
 local create_gameobj = EMV.create_gameobj
 local get_GameObject = EMV.get_GameObject
+
+local function get_cog_joint(xform)
+	local names = (game_name == "mhwilds" and mhwilds_compat and mhwilds_compat.cog_names) or {cog_names[game_name]}
+	for i, joint_name in ipairs(names or {}) do
+		local ok, joint = joint_name and pcall(xform.call, xform, "getJointByName", joint_name)
+		if ok and joint then
+			return joint
+		end
+	end
+end
 
 EMV.clear_figures = function()
 	paused = true
@@ -590,7 +607,7 @@ GameObject.new_AnimObject = function(self, args, o)
 	self.physicscloth = self.components_named.PhysicsCloth
 	self.chain = self.components_named.Chain
 	self.joints = args.joints or lua_get_system_array(self.xform:call("get_Joints") or {}, false, true)
-	self.cog_joint = args.cog_joint or self.xform:call("getJointByName", cog_names[game_name])
+	self.cog_joint = args.cog_joint or get_cog_joint(self.xform)
 	self.center = (self.cog_joint and self.cog_joint:call("get_BaseLocalPosition")) --or (self.mesh and self.mesh:call("get_WorldAABB"):call("getCenter")) or Vector3f.new(0,1.25,0)
 	--self.init_cog_offset = self.cog_joint and self.cog_joint:call("get_Position")
 	self.is_light = args.is_light or self.is_light
@@ -1112,6 +1129,7 @@ GameObject.activate_forced_mode = function(self)
 	if not figure_mode and not cutscene_mode then
 		self.init_transform = forced_mode and forced_mode.init_transform or self.init_transform --keep old init transform
 		self = GameObject.new_AnimObject(nil, {xform=self.xform}) --recreate object with class from this script
+		if not self then return end
 		forced_mode = self
 		current_figure = self
 		total_objects, imgui_anims, imgui_others = {}, {}
@@ -1251,7 +1269,7 @@ end
 GameObject.center_object = function(self)
 	
 	--log.info(tostring(self.cog_joint and self.cog_joint.call and is_valid_obj(self.xform)) .. " " .. tostring(self.start_time) .. " " .. tostring(self.cog_joint) .. " ")
-	self.cog_joint = self.xform:call("getJointByName", cog_names[game_name])
+	self.cog_joint = get_cog_joint(self.xform)
 	
 	if self.cog_joint and self.cog_joint.call and is_valid_obj(self.xform) then 
 		
@@ -1826,11 +1844,16 @@ GameObject.update_banks = function(self, force)
 					end
 					
 					unique_bank_ids[current_bank_id .. " " .. bank_type] = true
-					local num_motions = self.motion:call("getMotionCount(System.UInt32)", current_bank_id)
+					local count_ok, num_motions = pcall(self.motion.call, self.motion, "getMotionCount(System.UInt32)", current_bank_id)
+					num_motions = count_ok and num_motions or nil
 					local mlist_file = motlist:call("get_MotionList")
 					local motlist_name = (mlist_file and mlist_file:call("ToString()"):match("^.+%[@?(.+)%]")) or motlist:call("get_Name")
+					if (not num_motions or num_motions == 0) and isMHWILDS then
+						num_motions = 100
+						log.info("[MHWilds] Trying fallback motion enumeration for bank '" .. tostring(motlist_name or "unknown") .. "'")
+					end
 					
-					if is_matchable_motlist(motlist_name:lower()) then
+					if num_motions and num_motions > 0 and is_matchable_motlist(motlist_name:lower()) then
 						--log.info("B")
 						--unique_motlists_files[mlist_file] = true
 						if motlist_name == "" and not found_empty then 
@@ -1846,12 +1869,16 @@ GameObject.update_banks = function(self, force)
 						unique_motlists[motlist_name] = true
 						local inserted_motlist = false
 						
+						local consecutive_failures = 0
+						local max_failures = isMHWILDS and 10 or num_motions
 						for j=1, num_motions do
 						
 							local mot_info = sdk.create_instance("via.motion.MotionInfo")
 							mot_info:call(".ctor")
-							if self.motion:call("getMotionInfoByIndex(System.UInt32, System.Int32, System.UInt32, via.motion.MotionInfo)", current_bank_id, bank_type, j-1, mot_info) then
+							local info_ok, has_motion_info = pcall(self.motion.call, self.motion, "getMotionInfoByIndex(System.UInt32, System.Int32, System.UInt32, via.motion.MotionInfo)", current_bank_id, bank_type, j-1, mot_info)
+							if info_ok and has_motion_info then
 								--log.info("C")
+								consecutive_failures = 0
 								local mot_name = mot_info:call("get_MotionName")
 								if not unique_mots[mot_name] and is_matchable_mot(mot_name:lower()) then
 									unique_mots[mot_name] = true
@@ -1896,6 +1923,11 @@ GameObject.update_banks = function(self, force)
 										mot_count = mot_count + 1
 										--log.info("inserted sub table to " .. tostring(bank_name))
 									end
+								end
+							else
+								consecutive_failures = consecutive_failures + 1
+								if consecutive_failures >= max_failures then
+									break
 								end
 							end
 						end
